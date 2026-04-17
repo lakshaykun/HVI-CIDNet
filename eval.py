@@ -30,7 +30,7 @@ def eval(model, testing_data_loader, model_path, output_folder,norm_size=True,LO
             else:
                 input, name, h, w = batch[0], batch[1], batch[2], batch[3]
             
-            input = input.cuda()
+            input = input.to(device)
             output = model(input**gamma) 
             
         if not os.path.exists(output_folder):          
@@ -80,7 +80,7 @@ if __name__ == '__main__':
     ep = eval_parser.parse_args()
 
 
-    cuda = True
+    cuda = False
     if cuda and not torch.cuda.is_available():
         raise Exception("No GPU found, or need to change CUDA_VISIBLE_DEVICES number")
     
@@ -161,6 +161,7 @@ if __name__ == '__main__':
         norm_size = False
         weight_path = ep.unpaired_weights
         
-    eval_net = CIDNet().cuda()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    eval_net = CIDNet().to(device)
     eval(eval_net, eval_data, weight_path, output_folder,norm_size=norm_size,LOL=ep.lol,v2=ep.lol_v2_real,unpaired=ep.unpaired,alpha=alpha,gamma=ep.gamma)
 
