@@ -1,4 +1,5 @@
 import glob
+import torch
 from tqdm import tqdm
 from PIL import Image
 import imquality.brisque as brisque
@@ -23,7 +24,8 @@ def metrics(im_dir):
         avg_brisque += score_brisque
         avg_niqe += score_niqe
 
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
     avg_brisque = avg_brisque / n
     avg_niqe = avg_niqe / n

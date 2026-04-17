@@ -17,23 +17,24 @@ from tqdm import tqdm
 from datetime import datetime
 
 opt = option().parse_args()
+device = torch.device("cuda" if opt.gpu_mode and torch.cuda.is_available() else "cpu")
 
 def seed_torch():
     seed = random.randint(1, 1000000)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     
 def train_init():
+    global device
     seed_torch()
-    cudnn.benchmark = True
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-    cuda = opt.gpu_mode
-    if cuda and not torch.cuda.is_available():
-        raise Exception("No GPU found, please run without --cuda")
+    device = torch.device("cuda" if opt.gpu_mode and torch.cuda.is_available() else "cpu")
+    cudnn.benchmark = device.type == "cuda"
+    print(f"===> Using device: {device}")
     
 def train(epoch):
     model.train()
@@ -46,8 +47,8 @@ def train(epoch):
     torch.autograd.set_detect_anomaly(opt.grad_detect)
     for batch in tqdm(training_data_loader):
         im1, im2, path1, path2 = batch[0], batch[1], batch[2], batch[3]
-        im1 = im1.cuda()
-        im2 = im2.cuda()
+        im1 = im1.to(device)
+        im2 = im2.to(device)
         
         # use random gamma function (enhancement curve) to improve generalization
         if opt.gamma:
@@ -80,8 +81,8 @@ def train(epoch):
                 loss_last_10/pic_last_10, optimizer.param_groups[0]['lr']))
             loss_last_10 = 0
             pic_last_10 = 0
-            output_img = transforms.ToPILImage()((output_rgb)[0].squeeze(0))
-            gt_img = transforms.ToPILImage()((gt_rgb)[0].squeeze(0))
+            output_img = transforms.ToPILImage()(output_rgb[0].detach().cpu())
+            gt_img = transforms.ToPILImage()(gt_rgb[0].detach().cpu())
             if not os.path.exists(opt.val_folder+'training'):          
                 os.mkdir(opt.val_folder+'training') 
             output_img.save(opt.val_folder+'training/test.png')
@@ -141,10 +142,10 @@ def load_datasets():
 
 def build_model():
     print('===> Building model ')
-    model = CIDNet().cuda()
+    model = CIDNet().to(device)
     if opt.start_epoch > 0:
         pth = f"./weights/train/epoch_{opt.start_epoch}.pth"
-        model.load_state_dict(torch.load(pth, map_location=lambda storage, loc: storage))
+        model.load_state_dict(torch.load(pth, map_location=device))
     return model
 
 def make_scheduler():
@@ -171,10 +172,10 @@ def init_loss():
     E_weight    = opt.E_weight 
     P_weight    = 1.0
     
-    L1_loss= L1Loss(loss_weight=L1_weight, reduction='mean').cuda()
-    D_loss = SSIM(weight=D_weight).cuda()
-    E_loss = EdgeLoss(loss_weight=E_weight).cuda()
-    P_loss = PerceptualLoss({'conv1_2': 1, 'conv2_2': 1,'conv3_4': 1,'conv4_4': 1}, perceptual_weight = P_weight ,criterion='mse').cuda()
+    L1_loss= L1Loss(loss_weight=L1_weight, reduction='mean').to(device)
+    D_loss = SSIM(weight=D_weight).to(device)
+    E_loss = EdgeLoss(loss_weight=E_weight).to(device)
+    P_loss = PerceptualLoss({'conv1_2': 1, 'conv2_2': 1,'conv3_4': 1,'conv4_4': 1}, perceptual_weight = P_weight ,criterion='mse').to(device)
     return L1_loss,P_loss,E_loss,D_loss
 
 if __name__ == '__main__':  
@@ -260,7 +261,7 @@ if __name__ == '__main__':
             is_lol_v1 = (opt.dataset == 'lol_v1')
             is_lolv2_real = (opt.dataset == 'lolv2_real')
             eval(model, testing_data_loader, model_out_path, opt.val_folder+output_folder, 
-                 norm_size=norm_size, LOL=is_lol_v1, v2=is_lolv2_real, alpha=0.8)
+                  norm_size=norm_size, LOL=is_lol_v1, v2=is_lolv2_real, alpha=0.8, device=device)
             
             avg_psnr, avg_ssim, avg_lpips = metrics(im_dir, label_dir, use_GT_mean=False)
             print("===> Avg.PSNR: {:.4f} dB ".format(avg_psnr))
@@ -274,4 +275,5 @@ if __name__ == '__main__':
             print(lpips)
             with open(f"./results/training/metrics{now}.md", "a") as f:
                 f.write(f"| {epoch} | { avg_psnr:.4f} | {avg_ssim:.4f} | {avg_lpips:.4f} |\n")  
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

@@ -42,14 +42,16 @@ class EdgeLoss(nn.Module):
     def __init__(self,loss_weight=1.0, reduction='mean'):
         super(EdgeLoss, self).__init__()
         k = torch.Tensor([[.05, .25, .4, .25, .05]])
-        self.kernel = torch.matmul(k.t(),k).unsqueeze(0).repeat(3,1,1,1).cuda()
+        kernel = torch.matmul(k.t(),k).unsqueeze(0).repeat(3,1,1,1)
+        self.register_buffer('kernel', kernel)
 
         self.weight = loss_weight
         
     def conv_gauss(self, img):
-        n_channels, _, kw, kh = self.kernel.shape
+        kernel = self.kernel.to(device=img.device, dtype=img.dtype)
+        n_channels, _, kw, kh = kernel.shape
         img = F.pad(img, (kw//2, kh//2, kw//2, kh//2), mode='replicate')
-        return F.conv2d(img, self.kernel, groups=n_channels)
+        return F.conv2d(img, kernel, groups=n_channels)
 
     def laplacian_kernel(self, current):
         filtered    = self.conv_gauss(current)
@@ -175,14 +177,13 @@ class SSIM(torch.nn.Module):
     def forward(self, img1, img2):
         (_, channel, _, _) = img1.size()
 
-        if channel == self.channel and self.window.data.type() == img1.data.type():
+        if (channel == self.channel and
+            self.window.device == img1.device and
+            self.window.dtype == img1.dtype):
             window = self.window
         else:
             window = create_window(self.window_size, channel)
-
-            if img1.is_cuda:
-                window = window.cuda(img1.get_device())
-            window = window.type_as(img1)
+            window = window.to(device=img1.device, dtype=img1.dtype)
 
             self.window = window
             self.channel = channel

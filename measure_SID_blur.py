@@ -1,5 +1,4 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 import torch
 import glob
 import cv2
@@ -64,7 +63,7 @@ def calculate_psnr(target, ref):
     psnr = 10.0 * np.log10(255.0 * 255.0 / np.mean(np.square(diff)))
     return psnr
 
-def metrics(im_dir, label_dir, use_GT_mean):
+def metrics(im_dir, label_dir, use_GT_mean, device):
     avg_psnr = 0
     avg_ssim = 0
     avg_lpips = 0
@@ -96,15 +95,13 @@ def metrics(im_dir, label_dir, use_GT_mean):
         score_psnr = calculate_psnr(im1, im2)
         score_ssim = calculate_ssim(im1, im2)
 
-        ex_p0 = lpips.im2tensor(im1)
-        ex_ref = lpips.im2tensor(im2)
-        ex_p0 = ex_p0.cuda()
-        ex_ref = ex_ref.cuda()
+        ex_p0 = lpips.im2tensor(im1).to(device)
+        ex_ref = lpips.im2tensor(im2).to(device)
         score_lpips = loss_fn.forward(ex_ref, ex_p0)
     
         avg_psnr += score_psnr
         avg_ssim += score_ssim
-        avg_lpips += score_lpips
+        avg_lpips += score_lpips.item()
     return avg_psnr, avg_ssim, avg_lpips, n
 
 
@@ -120,8 +117,8 @@ if __name__ == '__main__':
     avg_ssim = 0
     avg_lpips = 0
     n = 0
-    loss_fn = lpips.LPIPS(net='alex')
-    loss_fn.cuda()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    loss_fn = lpips.LPIPS(net='alex').to(device)
     if mea.Blur:
         for index in range(1,257):
             fill_index = str(index).zfill(4)
@@ -129,16 +126,17 @@ if __name__ == '__main__':
             im_dir = test_dir + fill_index + "/*.png"
             label_dir = './datasets/LOL_blur/test/high_sharp_scaled/' + fill_index + "/"
             if os.path.exists(test_dir + fill_index):
-                i_psnr, i_ssim, i_lpips, i_n = metrics(im_dir, label_dir,mea.use_GT_mean)
+                i_psnr, i_ssim, i_lpips, i_n = metrics(im_dir, label_dir,mea.use_GT_mean, device)
                 print("===> Finish " + fill_index + " folder")
                 print("===> Avg.PSNR: {:.4f} dB ".format(i_psnr/i_n))
                 print("===> Avg.SSIM: {:.4f} ".format(i_ssim/i_n))
-                print("===> Avg.LPIPS: {:.4f}\n ".format(i_lpips.item()/i_n))
+                print("===> Avg.LPIPS: {:.4f}\n ".format(i_lpips/i_n))
                 avg_psnr    += i_psnr
                 avg_ssim    += i_ssim
-                avg_lpips   += i_lpips.item()
+                avg_lpips   += i_lpips
                 n += i_n
-                torch.cuda.empty_cache()
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
     
     elif mea.SID:
         for index in range(1,257):
@@ -147,16 +145,17 @@ if __name__ == '__main__':
             im_dir = test_dir + fill_index + "/*.png"
             label_dir = './datasets/Sony_total_dark/test/long/' + fill_index + "/"
             if os.path.exists(test_dir + fill_index):
-                i_psnr, i_ssim, i_lpips, i_n = metrics(im_dir, label_dir,mea.use_GT_mean)
+                i_psnr, i_ssim, i_lpips, i_n = metrics(im_dir, label_dir,mea.use_GT_mean, device)
                 print("===> Finish " + fill_index + " folder")
                 print("===> Avg.PSNR: {:.4f} dB ".format(i_psnr/i_n))
                 print("===> Avg.SSIM: {:.4f} ".format(i_ssim/i_n))
-                print("===> Avg.LPIPS: {:.4f}\n ".format(i_lpips.item()/i_n))
+                print("===> Avg.LPIPS: {:.4f}\n ".format(i_lpips/i_n))
                 avg_psnr    += i_psnr
                 avg_ssim    += i_ssim
-                avg_lpips   += i_lpips.item()
+                avg_lpips   += i_lpips
                 n += i_n
-                torch.cuda.empty_cache()
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
         
     print("===> All Finish")
     print("===> Avg.PSNR: {:.4f} dB ".format(avg_psnr/n))

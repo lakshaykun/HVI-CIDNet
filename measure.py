@@ -1,5 +1,4 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 import torch
 import glob
 import cv2
@@ -67,8 +66,8 @@ def metrics(im_dir, label_dir, use_GT_mean):
     avg_ssim = 0
     avg_lpips = 0
     n = 0
-    loss_fn = lpips.LPIPS(net='alex')
-    loss_fn.cuda()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    loss_fn = lpips.LPIPS(net='alex').to(device)
     for item in tqdm(sorted(glob.glob(im_dir))):
         n += 1
         
@@ -95,8 +94,8 @@ def metrics(im_dir, label_dir, use_GT_mean):
         
         score_psnr = calculate_psnr(im1, im2)
         score_ssim = calculate_ssim(im1, im2)
-        ex_p0 = lpips.im2tensor(im1).cuda()
-        ex_ref = lpips.im2tensor(im2).cuda()
+        ex_p0 = lpips.im2tensor(im1).to(device)
+        ex_ref = lpips.im2tensor(im2).to(device)
         
 
         score_lpips = loss_fn.forward(ex_ref, ex_p0)
@@ -104,7 +103,8 @@ def metrics(im_dir, label_dir, use_GT_mean):
         avg_psnr += score_psnr
         avg_ssim += score_ssim
         avg_lpips += score_lpips.item()
-        torch.cuda.empty_cache()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
     
 
     avg_psnr = avg_psnr / n

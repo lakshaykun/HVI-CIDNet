@@ -37,8 +37,9 @@ if __name__ == '__main__':
     eval_parser.add_argument('--alpha_i', type=float, default=1.0)
     eval_parser.add_argument('--gamma', type=float, default=1.0)
     el = eval_parser.parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    model = CIDNet().cuda()
+    model = CIDNet().to(device)
     model = from_pretrained(cls=model,pretrained_model_name_or_path=el.path)
     model.eval()
 
@@ -50,16 +51,16 @@ if __name__ == '__main__':
     H, W = ((h + factor) // factor) * factor, ((w + factor) // factor) * factor
     padh = H - h if h % factor != 0 else 0
     padw = W - w if w % factor != 0 else 0
-    input = F.pad(input.unsqueeze(0), (0,padw,0,padh), 'reflect')
+    input = F.pad(input.unsqueeze(0), (0,padw,0,padh), 'reflect').to(device)
     with torch.no_grad():
         model.trans.alpha_s = el.alpha_s
         model.trans.alpha = el.alpha_i
         model.trans.gated = True
         model.trans.gated2 = True
-        output = model(input.cuda()**el.gamma)
+        output = model(input**el.gamma)
             
 
-    output = torch.clamp(output.cuda(),0,1).cuda()
+    output = torch.clamp(output,0,1).cpu()
     output = output[:, :, :h, :w]
     enhanced_img = transforms.ToPILImage()(output.squeeze(0))
     output_folder = './output_hf'

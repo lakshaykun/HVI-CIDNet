@@ -1,5 +1,4 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import argparse
 from tqdm import tqdm
 from data.data import *
@@ -9,9 +8,12 @@ from loss.losses import *
 from net.CIDNet import CIDNet
 
 
-def eval(model, testing_data_loader, model_path, output_folder,norm_size=True,LOL=False,v2=False,unpaired=False,alpha=1.0,gamma=1.0):
+def eval(model, testing_data_loader, model_path, output_folder,norm_size=True,LOL=False,v2=False,unpaired=False,alpha=1.0,gamma=1.0,device=None):
     torch.set_grad_enabled(False)
-    model.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage))
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model.load_state_dict(torch.load(model_path, map_location=device))
     print('Pre-trained model is loaded.')
     model.eval()
     print('Evaluation:')
@@ -36,13 +38,14 @@ def eval(model, testing_data_loader, model_path, output_folder,norm_size=True,LO
         if not os.path.exists(output_folder):          
             os.mkdir(output_folder)  
             
-        output = torch.clamp(output.cuda(),0,1).cuda()
+        output = torch.clamp(output,0,1).cpu()
         if not norm_size:
             output = output[:, :, :h, :w]
         
         output_img = transforms.ToPILImage()(output.squeeze(0))
         output_img.save(output_folder + name[0])
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     print('===> End evaluation')
     if LOL:
         model.trans.gated = False
@@ -80,10 +83,6 @@ if __name__ == '__main__':
     ep = eval_parser.parse_args()
 
 
-    cuda = False
-    if cuda and not torch.cuda.is_available():
-        raise Exception("No GPU found, or need to change CUDA_VISIBLE_DEVICES number")
-    
     if not os.path.exists('./output'):          
             os.mkdir('./output')  
     
@@ -163,5 +162,5 @@ if __name__ == '__main__':
         
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_net = CIDNet().to(device)
-    eval(eval_net, eval_data, weight_path, output_folder,norm_size=norm_size,LOL=ep.lol,v2=ep.lol_v2_real,unpaired=ep.unpaired,alpha=alpha,gamma=ep.gamma)
+    eval(eval_net, eval_data, weight_path, output_folder,norm_size=norm_size,LOL=ep.lol,v2=ep.lol_v2_real,unpaired=ep.unpaired,alpha=alpha,gamma=ep.gamma,device=device)
 

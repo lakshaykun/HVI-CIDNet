@@ -14,18 +14,17 @@ import argparse
 opt_parser = argparse.ArgumentParser(description='App')
 opt_parser.add_argument('--cpu', action='store_true', help='CPU-Only')
 opt = opt_parser.parse_args()
+device = torch.device("cuda" if torch.cuda.is_available() and not opt.cpu else "cpu")
 
-if opt.cpu:
-    eval_net = CIDNet().cpu()
-else:
-    eval_net = CIDNet().cuda()
+eval_net = CIDNet().to(device)
     
 eval_net.trans.gated = True
 eval_net.trans.gated2 = True
 
 def process_image(input_img,score,model_path,gamma,alpha_s=1.0,alpha_i=1.0):
     torch.set_grad_enabled(False)
-    eval_net.load_state_dict(torch.load(os.path.join(directory,model_path), map_location=lambda storage, loc: storage))
+    checkpoint_path = os.path.join(directory,model_path)
+    eval_net.load_state_dict(torch.load(checkpoint_path, map_location=device))
     eval_net.eval()
     
     pil2tensor = transforms.Compose([transforms.ToTensor()])
@@ -35,19 +34,13 @@ def process_image(input_img,score,model_path,gamma,alpha_s=1.0,alpha_i=1.0):
     H, W = ((h + factor) // factor) * factor, ((w + factor) // factor) * factor
     padh = H - h if h % factor != 0 else 0
     padw = W - w if w % factor != 0 else 0
-    input = F.pad(input.unsqueeze(0), (0,padw,0,padh), 'reflect')
+    input = F.pad(input.unsqueeze(0), (0,padw,0,padh), 'reflect').to(device)
     with torch.no_grad():
         eval_net.trans.alpha_s = alpha_s
         eval_net.trans.alpha = alpha_i
-        if opt.cpu:
-            output = eval_net(input**gamma)
-        else:
-            output = eval_net(input.cuda()**gamma)
-            
-    if opt.cpu:
-        output = torch.clamp(output,0,1)
-    else:
-        output = torch.clamp(output.cuda(),0,1).cuda()
+        output = eval_net(input**gamma)
+
+    output = torch.clamp(output,0,1).cpu()
     output = output[:, :, :h, :w]
     enhanced_img = transforms.ToPILImage()(output.squeeze(0))
     if score == 'Yes':
